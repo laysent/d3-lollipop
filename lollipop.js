@@ -2,9 +2,16 @@
   // self: plugin
   // variable: object where configuration stored
   var configHelper = function (self, variable) {
+    // use curry to store `self` and `variable`
     return function (keyword) {
       return function (x) {
         if (!arguments.length) return variable[keyword];
+        // type check
+        if (variable[keyword] !== undefined && 
+            variable[keyword] !== null && 
+            typeof x !== typeof variable[keyword]) {
+            throw (typeof x) + " doesn't match " + (typeof variable[keyword]);
+        }
         variable[keyword] = x;
         return self;
       };
@@ -14,23 +21,27 @@
   d3.lollipop = function () {
     
     var variable = {
-      bound: {         // bound of chart
-        top: 10,       // top area for legend
-        bottom: 20,    // bottom area for x axis
-        left: 50,      // left area for y axis
-        rigth: 10      // right area for nothing
+      bound: {                 // bound of chart
+        top: 30,               // top area for legend
+        bottom: 20,            // bottom area for x axis
+        left: 50,              // left area for y axis
+        rigth: 10              // right area for nothing
         },
-      duration: 1000,   // duration for general transition
-      radius: 40,       // radius length of lollipop
-      lollipopRatio: .4,// ratio of lollipop
-      barWidth: 100,    // width of lollipop, including left and right paddings
-      height: 500,      // height of chart
-      width: undefined, // width of chart, if is defined, the size is fixed
+      legendText: [],          // legend texts (with no element in array, legend will not show)
+      legendLeftPadding: 10,   // legend global padding from y-axis area
+      duration: 1000,          // duration for general transition
+      radius: 40,              // radius length of lollipop
+      lollipopRatio: .4,       // ratio of lollipop
+      barWidth: 100,           // width of lollipop, including left and right paddings
+      height: 500,             // height of chart
+      width: undefined,        // width of chart, if is defined, the size is fixed
       parse: data => [data[0], [data[1], data[2]]],
       domain: data => [0, d3.max(data, d => d[0]) * 1.1],
       color: ['#1f77b4', '#2ca02c'],
-      yLabelText: '',   // text for y axis
-      tipText: (d,i) => ''
+      yLabelText: 'Visits',    // text for y axis
+      tipText: (d,i) => '',
+      tipDuration: 200,
+      legendBoxSize: undefined
     }
 
     const invisible = 1e-6, // JavaScript uses exponential expression for number smaller than 1e-6
@@ -56,26 +67,6 @@
 
         // ========== Drawing Part ==========
         //
-        // ===== Center Point in Lollipop =====
-        var centerPoint = selection.selectAll('circle.center').data([value]);
-
-        centerPoint.
-          enter().
-          append('circle').
-          attr({
-            'class': 'center',
-            'r': 2,
-            'cx': variable.barWidth / 2,
-            'cy': d => previousYScale(d)
-          }).
-          style('opacity', invisible);
-
-        centerPoint.
-          transition().
-          duration(variable.duration).
-          style('opacity', visible).
-          attr('cy', d => yScale(d));
-
         // ===== Lollipop Container =====
         // Lollipop will be drew inside the container
         
@@ -123,6 +114,15 @@
         // depends on the size of `sumPortion`, the lollipop might not be
         // a complete circle
         var pie = d3.layout.pie().endAngle(variable.__arcScale__(sumPortion));
+        // `zeroDegree` is for animation only
+        // make sure all new ones span from 0 degree
+        var zeroDegree = {
+                'data': 0,
+                'endAngle': 0,
+                'startAngle': 0,
+                'padAngle': 0,
+                'value':0                
+            };
 
         var lollipop = selection.selectAll('g.lollipopContainer')
             .data([portion])
@@ -139,7 +139,7 @@
           })
           .style('opacity', invisible)
           .each(function (d) {
-            this._current = d
+            this._current = zeroDegree;
           }); // store the initial angles
 
         lollipop.transition()
@@ -172,6 +172,26 @@
           }).
           style('visible', visible);
 
+        // ===== Center Point in Lollipop =====
+        var centerPoint = selection.selectAll('circle.center').data([value]);
+
+        centerPoint.
+          enter().
+          append('circle').
+          attr({
+            'class': 'center',
+            'r': 2,
+            'cx': variable.barWidth / 2,
+            'cy': d => previousYScale(d)
+          }).
+          style('opacity', invisible);
+
+        centerPoint.
+          transition().
+          duration(variable.duration).
+          style('opacity', visible).
+          attr('cy', d => yScale(d));
+
       }); // end of `selections.each()`
     }; // end of `drawSinglelollipopBar()`
 
@@ -185,7 +205,7 @@
           domain(variable.domain(chartData)).
           range([ 
             variable.height - variable.radius - variable.bound.bottom,
-            variable.radius + variable.bound.top
+            variable.bound.top
             ]);
 
      // only the lollipop with biggest sum can have complete circle,
@@ -236,10 +256,9 @@
           'font-size': '10px',
           'height': variable.tipHeight + 'px',
           'width': variable.tipWidth + 'px',
-          'margin-left': (i * variable.barWidth + 
-                          variable.yAxisWidth +
-                          (variable.barWidth - variable.tipWidth) / 2) + 'px',
-          'margin-top': (variable.__yScale__(d.visits) - variable.radius - variable.tipHeight - variable.tipPadding) + 'px'
+          'margin-left': ((i + 1) * variable.barWidth + 
+                          variable.bound.left) + 'px',
+          'margin-top': (variable.__yScale__(variable.parse(d)[0])) + 'px'
         }).html(variable.tipText(d, i));
         
         variable.__tip__
@@ -257,14 +276,73 @@
       })
       
       lollipops.exit().remove();
+        
+      // ===== legend =====
+      
+      // legend container, contains all legends
+      var legendContainer = container
+        .selectAll('g.legendContainer')
+        .data([chartData]);
+        
+      legendContainer
+        .enter()
+        .append('g')
+        .attr({
+          'class': 'legendContainer'
+        });
+        
+      legendContainer
+        .attr({
+          'transform': 'translate(' + 
+            (variable.bound.left) +
+            ', 0)'
+        });
+
+      // single legend container
+      var legend = legendContainer.selectAll('g.legend')
+        .data(variable.legendText);
+      var currentShift = variable.legendLeftPadding;
+      var legendBoxSize = variable.legendBoxSize || 5;
+      // add new legend container
+      var newlegend = legend
+        .enter()
+        .append('g')
+        .attr({
+          'class': 'legend'
+        });
+      // legend rectangle
+      newlegend.append('rect')
+        .attr({
+          'class': 'legendRect',
+          'height': legendBoxSize,
+          'width': legendBoxSize,
+          'fill': (d, i) => variable.color[i],
+          'transform': 'translate(' + 
+            0 + ',' + 
+            0 + ')'
+        });
+      // legend text
+      newlegend.append('text')
+        .attr({
+          'class': 'legendLabel',
+          'transform': 'translate(' + 
+            (legendBoxSize + 2) + 
+            ', ' + (legendBoxSize) + ')'
+        }).
+        text(d => d);
+        newlegend.attr({
+          'transform': function (d, i) {
+              var box = this.getBBox(), 
+                ret = 'translate(' + (currentShift) + ', ' + (variable.bound.top - box.height) / 2 +')';
+              currentShift += box.width + 5;
+              return ret;
+          }
+        })
 
       // ===== Axis & Title =====
       var ordinal = d3.scale.ordinal()
         .domain(d3.range(chartData.length))
-        .rangePoints([
-          variable.barWidth / 2, 
-          (chartData.length - 0.5) * variable.barWidth
-          ]);
+        .rangePoints([0, chartData.length * variable.barWidth], 1);
       var xAxis = d3.svg.axis()
         .scale(ordinal)
         .orient('bottom')
@@ -318,6 +396,20 @@
     Object.keys(variable).forEach(keyword => {
       lollipops[keyword] = customization(keyword);
     });
+    lollipops.bound = function(top, right, bottom, left) {
+        if (top === undefined) return variable.bound;
+        if (right === undefined) {
+            var config = top;
+            Object.keys(variable.bound).forEach(keyword => {
+                if (!config[keyword]) variable.bound[keyword] = config[keyword];
+            });
+        }
+        variable.bound.top = top;
+        variable.bound.right = right;
+        variable.bound.bottom = bottom || variable.bound.bottom;
+        variable.bound.left = left || variable.bound.left;
+        return lollipops;
+    }
     
     return lollipops;
   }
