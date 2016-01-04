@@ -1,6 +1,8 @@
 Lollipop Chart
 ==============
 
+[Demo](http://bl.ocks.org/laysent/5739f087ec78e4386a6a)
+
 Designed for scenarios where three or more parameters need to be displayed in
 one chart, where one of the parameter is significantly larger than other values,
 and will not be used as portion of all other parameters in the chart.
