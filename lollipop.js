@@ -23,28 +23,34 @@
     var variable = {
       bound: {                 // bound of chart
         top: 30,               // top area for legend
+        right: 0,              // right area for nothing
         bottom: 20,            // bottom area for x axis
         left: 50,              // left area for y axis
-        rigth: 10              // right area for nothing
-        },
-      legendText: [],          // legend texts (with no element in array, legend will not show)
-      legendLeftPadding: 10,   // legend global padding from y-axis area
-      duration: 1000,          // duration for general transition
-      radius: 40,              // radius length of lollipop
-      lollipopRatio: .4,       // ratio of lollipop
-      barWidth: 100,           // width of lollipop, including left and right paddings
+      },
       height: 500,             // height of chart
       width: undefined,        // width of chart, if is defined, the size is fixed
-      parse: data => [data[0], [data[1], data[2]]],
-      domain: data => [0, d3.max(data, d => d[0]) * 1.1],
+      
+      barWidth: 100,           // width of lollipop, including left and right paddings
+      radius: 40,              // radius length of lollipop
+      lollipopRatio: .4,       // ratio of lollipop
+      
+      duration: 1000,          // duration for general transition
+      
+      legendText: [],          // legend texts (with no element in array, legend will not show)
+      legendLeftPadding: 10,   // legend global padding from y-axis area
+      legendBoxSize: 5,
+      
       color: ['#1f77b4', '#2ca02c'],
+      
       yLabelText: 'Visits',    // text for y axis
-      tipText: (d,i) => '',
-      tipDuration: 200,
-      legendBoxSize: undefined
+      
+      tooltipText: (d,i) => '',
+      tooltipDuration: 200,
+
+      parse: data => [data[0], [data[1], data[2]]],
     }
 
-    const invisible = 1e-6, // JavaScript uses exponential expression for number smaller than 1e-6
+    var invisible = 1e-6, // JavaScript uses exponential expression for number smaller than 1e-6
                             // which cannot be recognized by CSS,
                             // to make transition work, invisible should be 1e-6, not 0
       visible = 1;
@@ -200,10 +206,16 @@
       // chartData structure: [{}, {}, ...];
       var chartData = container.datum();
 
+      // if `width` is defined, use fixed size for chart
+      if (variable.width !== undefined && typeof variable.width == typeof 0) {
+          variable.barWidth = variable.width / chartData.length;
+          variable.radius = Math.min(variable.barWidth / 2, variable.radius);
+      }
+
     // y scale (stored in variable for further usage)
-     variable.__yScale__ = d3.scale.linear().
-          domain(variable.domain(chartData)).
-          range([ 
+     variable.__yScale__ = d3.scale.linear()
+          .domain([0, d3.max(chartData, d => variable.parse(d)[0]) * 1.1])
+          .range([ 
             variable.height - variable.radius - variable.bound.bottom,
             variable.bound.top
             ]);
@@ -219,8 +231,8 @@
             )])
           .range([0, 2 * Math.PI]);
 
-     // create one DOM for tip
-     variable.__tip__ = variable.__tip__ || (function() {
+     // create one DOM for tooltip
+     variable.__tooltip__ = variable.__tooltip__ || (function() {
      var dom = document.getElementById('tooltip');
         if (!dom) {
           dom = document.createElement('div');
@@ -252,26 +264,24 @@
 
       // add events for show/hide tooltip
       lollipops.on('mouseover', (d, i) => {
-        variable.__tip__.style({
+        variable.__tooltip__.style({
           'font-size': '10px',
-          'height': variable.tipHeight + 'px',
-          'width': variable.tipWidth + 'px',
           'margin-left': ((i + 1) * variable.barWidth + 
                           variable.bound.left) + 'px',
           'margin-top': (variable.__yScale__(variable.parse(d)[0])) + 'px'
-        }).html(variable.tipText(d, i));
+        }).html(variable.tooltipText(d, i));
         
-        variable.__tip__
+        variable.__tooltip__
         .transition()
-          .duration(variable.tipDuration)
+          .duration(variable.tooltipDuration)
           .style({
           'opacity': visible
           });
       });
       lollipops.on('mouseout', (d, i) => {
-        variable.__tip__
+        variable.__tooltip__
         .transition()
-          .duration(variable.tipDuration)
+          .duration(variable.tooltipDuration)
           .style('opacity', invisible);
       })
       
@@ -397,15 +407,15 @@
       lollipops[keyword] = customization(keyword);
     });
     lollipops.bound = function(top, right, bottom, left) {
-        if (top === undefined) return variable.bound;
-        if (right === undefined) {
+        if (arguments.length == 0) return variable.bound;
+        if (arguments.length == 1) {
             var config = top;
             Object.keys(variable.bound).forEach(keyword => {
                 if (!config[keyword]) variable.bound[keyword] = config[keyword];
             });
         }
-        variable.bound.top = top;
-        variable.bound.right = right;
+        variable.bound.top = top || variable.bound.top;
+        variable.bound.right = right || variable.bound.right;
         variable.bound.bottom = bottom || variable.bound.bottom;
         variable.bound.left = left || variable.bound.left;
         return lollipops;
